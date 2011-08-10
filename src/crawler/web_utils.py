@@ -57,7 +57,9 @@ class WebPage:
         return [ word for word in [ X for X in plainText ]
                  if word in listofWords ]
         
-
-w = WebPage("http://tce.edu")
-w.getHTMLPage()
-print w.retrieveHyperLinks()
+    def crawlWebPage(self):
+        data = {}
+        self.getHTMLPage()
+        data['links'] = self.retrieveHyperLinks()
+        data['wordstream'] = self.wordStream()
+        return data
