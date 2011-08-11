@@ -3,27 +3,52 @@
 # File        : web_utils.py
 # Description : Utilities for parsing and retrieving Hyperlinks from HTML Page
 
-import urllib
+import urllib2
+import urlparse
+import magic
 
 from html_parser import HTMLParser
+from hbase_crawl import HBaseCrawlerInterface
+from lxml.html.clean import clean_html
 
 class WebPage:
     
     # Constructor
     def __init__(self, targetURL):
         self.url = targetURL
+        self.hbaseInterface = HBaseCrawlerInterface()
         
+    def removeNonAscii(self,s): 
+        return "".join(filter(lambda x: ord(x)<128, s))
+
+    def cleanUpHTML(self, lines):
+        self.lines = clean_html(lines)
+        self.lines = self.removeNonAscii(self.lines)
+
     # Retrieve HTML Page and assign it to a variable
     def getHTMLPage(self):
-        response = urllib.urlopen(self.url)
-        lines = response.read()
-        self.lines = lines
+        try:
+            if urlparse.urlparse(self.url).scheme == 'http':
+                opener = urllib2.build_opener()
+                response = urllib2.Request(self.url)
+                response.add_header('User-Agent', 'Mozilla/5.0 (X11; Linux i686; rv:2.0.1) Gecko/20100101 Firefox/4.0.1')
+                lines = opener.open(response).read()
+                self.lines = lines
+                mime = magic.Magic(mime=True)
+                if mime.from_buffer(self.lines) != 'text/html' : raise URLError
+                self.cleanUpHTML(self.lines)
+            else:
+                self.lines = ""
+            return self.lines
+        except URLError:
+            print self.url
 
     # Retrieves a list of Hyperlinks from the HTML page
     def retrieveHyperLinks(self):
         parser = HTMLParser(self.url)
         parser.feed(self.lines)
-        return parser.urls
+        return [ URL for URL in parser.urls 
+                 if not self.hbaseInterface.URLExists(URL) ]
     
     # Convert HTML to ASCII/Text
     def getPlainText(self):
@@ -59,7 +84,10 @@ class WebPage:
         
     def crawlWebPage(self):
         data = {}
-        self.getHTMLPage()
-        data['links'] = self.retrieveHyperLinks()
-        data['wordstream'] = self.wordStream()
-        return data
+        if self.getHTMLPage():
+            data['links'] = self.retrieveHyperLinks()
+            data['wordstream'] = self.wordStream()
+            self.hbaseInterface.insertURL(data['wordstream'], self.url)
+            return data['links']
+        else:
+            pass
